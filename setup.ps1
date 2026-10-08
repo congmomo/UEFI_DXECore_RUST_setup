@@ -90,6 +90,16 @@ function Toml-Value($file, $key) {
 Step "Git"
 if (-not (Have "git")) { Winget-Install "Git.Git" "Git" }
 Ok (git --version)
+# MU_BASECORE contains paths > 260 chars. GIT_CONFIG_PARAMETERS is honoured by every git process started
+# from here on (including the submodule clones that stuart_setup runs), without touching the user's config.
+$env:GIT_CONFIG_PARAMETERS = "'core.longpaths=true'"
+if ($root.Length -gt 60) {
+    Warn "This directory path is $($root.Length) characters long; a short path such as C:\src\patina is safer on Windows."
+}
+$lp = Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" -Name LongPathsEnabled -ErrorAction SilentlyContinue
+if (-not ($lp -and $lp.LongPathsEnabled -eq 1)) {
+    Warn "Windows long paths are disabled (HKLM\...\FileSystem\LongPathsEnabled). Git is told to cope; other tools may not."
+}
 
 # --------------------------------------------------------------------------------------------------
 Step "Python 3.10+"

@@ -116,6 +116,10 @@ Outputs: `patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEM
    `CLANG_BIN` at it (`setup.ps1` downloads it, `build_q35.ps1` sets the variable).
 3. `rustup toolchain install` needs one `--target` per target; the newest `cargo-binstall` requires a
    newer rustc than the pinned 1.95, so `cargo install cargo-make@<ver>` is used instead.
+4. **`error: unable to create file ...: Filename too long`** while `stuart_setup` clones `MU_BASECORE`.
+   The EDK II tree has paths longer than 260 characters. `setup.ps1` sets `core.longpaths=true` for every
+   git process it starts (via `GIT_CONFIG_PARAMETERS`, without touching your global config) and warns if the
+   checkout directory itself is deep. Keep the repository in a short path such as `C:\src\patina`.
 
 ### Repository layout
 
@@ -237,6 +241,10 @@ Set-ExecutionPolicy -Scope Process Bypass
    （`setup.ps1` 负责下载，`build_q35.ps1` 负责设置变量）。
 3. `rustup toolchain install` 的每个 target 要单独写 `--target`；最新 `cargo-binstall` 要求的 rustc
    比钉死的 1.95 新，所以改用 `cargo install cargo-make@<版本>`。
+4. **`stuart_setup` clone `MU_BASECORE` 时报 `error: unable to create file ...: Filename too long`**。
+   EDK II 代码树里有超过 260 字符的路径。`setup.ps1` 通过 `GIT_CONFIG_PARAMETERS` 给它启动的每个 git
+   进程设置 `core.longpaths=true`（不改你的全局配置），并在仓库目录本身过深时给出警告。请把仓库放在
+   `C:\src\patina` 这样的短路径下。
 
 ### 仓库结构
 
