@@ -121,6 +121,40 @@ Outputs: `patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEM
    git process it starts (via `GIT_CONFIG_PARAMETERS`, without touching your global config) and warns if the
    checkout directory itself is deep. Keep the repository in a short path such as `C:\src\patina`.
 
+### Verified results
+
+Recorded boot logs live in [`logs/`](logs/); the learning guide cites them by line number.
+
+| Log | Firmware | Mode | Result |
+| --- | --- | --- | --- |
+| [qemu_q35_nuget_core_v3.2.5.log](logs/qemu_q35_nuget_core_v3.2.5.log) | prebuilt Patina DXE Core from NuGet | headless | boots to Shell, 27 tests pass, `reset -s` |
+| [qemu_q35_local_core_v3.2.6.log](logs/qemu_q35_local_core_v3.2.6.log) | locally built `cargo make q35` | headless | same, `DXE Core Platform Binary v3.2.6` |
+| [qemu_q35_hello_component.log](logs/qemu_q35_hello_component.log) | local core + `examples/hello_component` | headless | 29 tests pass incl. the two example tests |
+| [qemu_q35_hello_component_window.log](logs/qemu_q35_hello_component_window.log) | local core + `examples/hello_component` | display window | 34 tests pass, Shell stays up |
+
+On-system test output from the windowed run (`logs/qemu_q35_hello_component_window.log`, lines 4307–4322):
+
+```
+Patina on-system unit-test results:
+  hello_component::tests::greeting_matches_config ... ok (1 passes)
+  hello_component::tests::greeting_service_exists ... ok (1 passes)
+  patina_acpi::integration_test::acpi_protocol_test ... ok (1 passes)
+  patina_acpi::integration_test::acpi_test ... ok (1 passes)
+  patina_adv_logger::integration_test::adv_logger_test ... ok (1 passes)
+  patina_dxe_core::core_patina_tests::audit_tests::gcd_free_memory_merged_test ... ok (1 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_split ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_unmap_2mb_remap ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_unmap_4kb_remap ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_2mb_split ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_2mb_unmap ... ok (5 passes)
+  patina_dxe_core::memory_manager::memory_manager_allocations_test ... ok (1 passes)
+  patina_dxe_core::memory_manager::memory_manager_attributes_test ... ok (1 passes)
+Patina on-system unit-test result totals: 34 passes, 0 fails
+```
+
+The total varies between runs (the page-table stability tests iterate over every GCD region, and a display
+device adds MMIO regions), so treat `0 fails` as the pass criterion, not the count.
+
 ### Learning guide
 
 A nine-chapter guide for C firmware engineers, built around this repository: boot-log anatomy, the DXE Core
@@ -137,7 +171,8 @@ docs/learning-guide.en.md   learning guide (English)
 docs/learning-guide.zh.md   learning guide (中文)
 examples/hello_component/   chapter-5 example component + apply.ps1 to wire it into patina-dxe-core-qemu
 Rust_DXE_Core_调研报告.md    research notes (Chinese): Patina architecture, alternatives, hands-on record
-.gitignore                  excludes patina-qemu/, patina-dxe-core-qemu/, tools/, logs/
+logs/                       recorded QEMU boot logs cited by the guide (user paths scrubbed)
+.gitignore                  excludes patina-qemu/, patina-dxe-core-qemu/, tools/
 ```
 
 Upstream licenses: Patina and patina-dxe-core-qemu are Apache-2.0; patina-qemu is BSD-2-Clause-Patent.
@@ -255,6 +290,40 @@ Set-ExecutionPolicy -Scope Process Bypass
    进程设置 `core.longpaths=true`（不改你的全局配置），并在仓库目录本身过深时给出警告。请把仓库放在
    `C:\src\patina` 这样的短路径下。
 
+### 验证结果
+
+实际跑出来的启动日志放在 [`logs/`](logs/)，学习指导按行号引用它们。
+
+| 日志 | 固件 | 模式 | 结果 |
+| --- | --- | --- | --- |
+| [qemu_q35_nuget_core_v3.2.5.log](logs/qemu_q35_nuget_core_v3.2.5.log) | NuGet 预编译 Patina DXE Core | 无头 | 进 Shell，27 项测试通过，`reset -s` 关机 |
+| [qemu_q35_local_core_v3.2.6.log](logs/qemu_q35_local_core_v3.2.6.log) | 本地 `cargo make q35` 编译 | 无头 | 同上，日志出现 `DXE Core Platform Binary v3.2.6` |
+| [qemu_q35_hello_component.log](logs/qemu_q35_hello_component.log) | 本地核心 + `examples/hello_component` | 无头 | 29 项通过，含示例的两个测试 |
+| [qemu_q35_hello_component_window.log](logs/qemu_q35_hello_component_window.log) | 本地核心 + `examples/hello_component` | 带显示窗口 | 34 项通过，Shell 保持运行 |
+
+带窗口那次的片上测试输出（`logs/qemu_q35_hello_component_window.log` 第 4307 到 4322 行）：
+
+```
+Patina on-system unit-test results:
+  hello_component::tests::greeting_matches_config ... ok (1 passes)
+  hello_component::tests::greeting_service_exists ... ok (1 passes)
+  patina_acpi::integration_test::acpi_protocol_test ... ok (1 passes)
+  patina_acpi::integration_test::acpi_test ... ok (1 passes)
+  patina_adv_logger::integration_test::adv_logger_test ... ok (1 passes)
+  patina_dxe_core::core_patina_tests::audit_tests::gcd_free_memory_merged_test ... ok (1 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_split ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_unmap_2mb_remap ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_1gb_unmap_4kb_remap ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_2mb_split ... ok (5 passes)
+  patina_dxe_core::core_patina_tests::stability_tests::page_table_tests_2mb_unmap ... ok (5 passes)
+  patina_dxe_core::memory_manager::memory_manager_allocations_test ... ok (1 passes)
+  patina_dxe_core::memory_manager::memory_manager_attributes_test ... ok (1 passes)
+Patina on-system unit-test result totals: 34 passes, 0 fails
+```
+
+总数在不同运行间会变（页表稳定性测试会遍历 GCD 里的每个区域，显示设备会多出 MMIO 区域），
+所以以 `0 fails` 为通过标准，不看总数。
+
 ### 学习指导
 
 面向 C 固件工程师的九章指南，围绕本仓库展开：启动日志剖析、DXE Core 入口路径、组件模型、动手写组件
@@ -271,7 +340,8 @@ docs/learning-guide.zh.md   学习指导（中文）
 docs/learning-guide.en.md   学习指导（English）
 examples/hello_component/   第 5 章示例组件 + apply.ps1（接入 patina-dxe-core-qemu）
 Rust_DXE_Core_调研报告.md    调研笔记：Patina 架构、替代项目、实操记录
-.gitignore                  排除 patina-qemu/、patina-dxe-core-qemu/、tools/、logs/
+logs/                       指南引用的 QEMU 启动日志（已抹掉用户路径）
+.gitignore                  排除 patina-qemu/、patina-dxe-core-qemu/、tools/
 ```
 
 上游许可证：Patina 和 patina-dxe-core-qemu 为 Apache-2.0，patina-qemu 为 BSD-2-Clause-Patent。

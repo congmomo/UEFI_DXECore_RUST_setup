@@ -2,10 +2,10 @@
 /patina-qemu/
 /patina-dxe-core-qemu/
 
-# Downloaded toolchains (portable LLVM) and build artifacts
+# Downloaded toolchains (portable LLVM)
 /tools/
-/logs/
-*.log
+
+# logs/ is committed on purpose: README and the learning guide cite those files by line number.
 
 # Editor / OS noise
 .vscode/
