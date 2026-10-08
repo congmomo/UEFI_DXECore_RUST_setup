@@ -36,8 +36,8 @@ built with the CLANGPDB toolchain. See the [Patina book](https://opendevicepartn
 ### Quick start
 
 ```powershell
-git clone <this repo> UEFI_DXE_RUST
-cd UEFI_DXE_RUST
+git clone https://github.com/congmomo/UEFI_DXECore_RUST_setup.git patina
+cd patina
 Set-ExecutionPolicy -Scope Process Bypass
 
 .\setup.ps1                   # one-time: tools, LLVM 21, clone upstream, Rust toolchain, pytools, stuart setup/update
@@ -165,8 +165,8 @@ DXE Core（微软主导，Apache-2.0，支持 x64 和 AArch64）。一个完整�
 ### 快速开始
 
 ```powershell
-git clone <本仓库> UEFI_DXE_RUST
-cd UEFI_DXE_RUST
+git clone https://github.com/congmomo/UEFI_DXECore_RUST_setup.git patina
+cd patina
 Set-ExecutionPolicy -Scope Process Bypass
 
 .\setup.ps1                   # 一次性：工具、LLVM 21、clone 上游、Rust 工具链、pytools、stuart setup/update
