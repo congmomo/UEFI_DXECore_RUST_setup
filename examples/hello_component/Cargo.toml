@@ -1,0 +1,14 @@
+[package]
+name = "hello_component"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Learning-guide example: a Patina component that publishes a service, and a second one that consumes it"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+# Keep in sync with the patina version used by patina-dxe-core-qemu (see its Cargo.toml / Cargo.lock).
+patina = { version = "23" }
+log = { version = "^0.4", default-features = false }

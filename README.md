@@ -121,12 +121,21 @@ Outputs: `patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEM
    git process it starts (via `GIT_CONFIG_PARAMETERS`, without touching your global config) and warns if the
    checkout directory itself is deep. Keep the repository in a short path such as `C:\src\patina`.
 
+### Learning guide
+
+A nine-chapter guide for C firmware engineers, built around this repository: boot-log anatomy, the DXE Core
+entry path, the component model, a hands-on component (`examples/hello_component`), C interop, debugging,
+porting to your own platform. [English](docs/learning-guide.en.md) · [中文](docs/learning-guide.zh.md).
+
 ### Repository layout
 
 ```
 setup.ps1                   environment setup and downloads
 build_q35.ps1               build / run
 README.md                   this file
+docs/learning-guide.en.md   learning guide (English)
+docs/learning-guide.zh.md   learning guide (中文)
+examples/hello_component/   chapter-5 example component + apply.ps1 to wire it into patina-dxe-core-qemu
 Rust_DXE_Core_调研报告.md    research notes (Chinese): Patina architecture, alternatives, hands-on record
 .gitignore                  excludes patina-qemu/, patina-dxe-core-qemu/, tools/, logs/
 ```
@@ -246,12 +255,21 @@ Set-ExecutionPolicy -Scope Process Bypass
    进程设置 `core.longpaths=true`（不改你的全局配置），并在仓库目录本身过深时给出警告。请把仓库放在
    `C:\src\patina` 这样的短路径下。
 
+### 学习指导
+
+面向 C 固件工程师的九章指南，围绕本仓库展开：启动日志剖析、DXE Core 入口路径、组件模型、动手写组件
+（`examples/hello_component`）、与 C 互操作、调试、移植到自己的平台。
+[中文](docs/learning-guide.zh.md) · [English](docs/learning-guide.en.md)。
+
 ### 仓库结构
 
 ```
 setup.ps1                   环境配置与下载
 build_q35.ps1               编译 / 运行
 README.md                   本文件
+docs/learning-guide.zh.md   学习指导（中文）
+docs/learning-guide.en.md   学习指导（English）
+examples/hello_component/   第 5 章示例组件 + apply.ps1（接入 patina-dxe-core-qemu）
 Rust_DXE_Core_调研报告.md    调研笔记：Patina 架构、替代项目、实操记录
 .gitignore                  排除 patina-qemu/、patina-dxe-core-qemu/、tools/、logs/
 ```
