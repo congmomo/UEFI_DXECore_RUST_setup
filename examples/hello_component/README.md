@@ -24,6 +24,13 @@ Dispatching hello_component::GreetingConsumer
 [hello_component] consumer got: Hello, Patina learner!!!
 ```
 
+and, under `Patina on-system unit-test results` (two `#[patina_test]` functions in `src/lib.rs`, run at ReadyToBoot):
+
+```
+hello_component::tests::greeting_matches_config ... ok (1 passes)
+hello_component::tests::greeting_service_exists ... ok (1 passes)
+```
+
 ---
 
 学习指导第 5 章的配套示例。两个组件、一个服务、一个配置：`HelloGreeter` 读配置并生产服务，

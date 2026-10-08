@@ -472,7 +472,7 @@ Dispatching hello_component::GreetingConsumer
 1. 把 `GreetingConsumer` 的参数改成 `Option<Service<dyn Greeting>>`，再把 `HelloGreeter` 的注册注释掉。观察消费者仍然运行、打印 `None` 分支。
 2. 加一个 `ConfigMut<GreetingConfig>` 的组件把 `exclamation_marks` 改成 10，看 `HelloGreeter` 读到的值。理解锁定时机：它在你的组件跑完、配置被锁之后才分发。
 3. 把 `entry_point` 改成返回 `Err(patina::error::EfiError::DeviceError)`，看日志里 `Dispatched: ... Status = [Failed]`，以及它不再重试。
-4. 给 crate 加一个 `#[patina_test]`（见第 9 章），断言服务存在，让它出现在 `Patina on-system unit-test` 结果里。
+4. 片上测试（已做好，在 `src/lib.rs` 的 `mod tests`）：两个 `#[patina_test]`，一个断言 `Service<dyn Greeting>` 存在且含注册的名字，一个同时注入 `Config<GreetingConfig>` 断言感叹号数量和配置一致。要点：测试函数和组件一样靠参数类型注入依赖；`#[on(event = BinaryGuid(efi::EVENT_GROUP_READY_TO_BOOT))]` 让它们在所有组件和驱动分发完之后才跑，所以服务一定已经存在；断言用 `u_assert!`/`u_assert_eq!`，失败返回错误字符串而不是 panic。在 `Patina on-system unit-test results` 里找 `hello_component::tests::greeting_service_exists ... ok` 和 `greeting_matches_config ... ok`。练习：把 `apply.ps1` 里的 `exclamation_marks` 改成 5 再跑，两个测试都应仍然通过；再把测试里的期望改成固定值 3，看失败时日志长什么样、`exit_on_patina_test_failure` 如何让 QEMU 以非零码退出。
 
 ### 检查点
 

@@ -108,3 +108,42 @@ impl GreetingConsumer {
         Ok(())
     }
 }
+
+/// On-system tests (learning guide chapter 5, exercise 4).
+///
+/// `#[patina_test]` functions are collected by the `TestRunner` component that the Q35 platform already registers.
+/// They take the same injected parameters as components. `#[on(event = READY_TO_BOOT)]` delays them until every
+/// component and driver has dispatched, so the service is guaranteed to exist. Results show up in the console as
+/// `hello_component::tests::<name> ... ok` under "Patina on-system unit-test results".
+mod tests {
+    use super::{Greeting, GreetingConfig};
+    use patina::{
+        BinaryGuid,
+        component::{params::Config, service::Service},
+        standard::efi,
+    };
+    use patina_test::{patina_test, u_assert, u_assert_eq};
+
+    /// The service exists and carries the name the platform registered.
+    #[patina_test]
+    #[on(event = BinaryGuid(efi::EVENT_GROUP_READY_TO_BOOT))]
+    fn greeting_service_exists(greeting: Service<dyn Greeting>) -> patina_test::error::Result {
+        let text = greeting.greeting();
+        u_assert!(text.starts_with("Hello, "), "greeting does not start with 'Hello, '");
+        u_assert!(text.contains("Patina learner"), "greeting does not contain the registered name");
+        Ok(())
+    }
+
+    /// The number of exclamation marks matches the locked config value.
+    #[patina_test]
+    #[on(event = BinaryGuid(efi::EVENT_GROUP_READY_TO_BOOT))]
+    fn greeting_matches_config(
+        greeting: Service<dyn Greeting>,
+        cfg: Config<GreetingConfig>,
+    ) -> patina_test::error::Result {
+        let text = greeting.greeting();
+        let marks = text.chars().rev().take_while(|c| *c == '!').count();
+        u_assert_eq!(marks, cfg.exclamation_marks, "exclamation mark count does not match GreetingConfig");
+        Ok(())
+    }
+}

@@ -556,8 +556,16 @@ To restore the upstream files afterwards: `.\examples\hello_component\apply.ps1 
    was locked.
 3. Make `entry_point` return `Err(patina::error::EfiError::DeviceError)`; find `Dispatched: ... Status = [Failed]`
    in the log and confirm it is not retried.
-4. Add a `#[patina_test]` to the crate (chapter 9) that asserts the service exists, and watch it appear in the
-   `Patina on-system unit-test` results.
+4. On-system tests (already written, `mod tests` in `src/lib.rs`): two `#[patina_test]` functions, one asserting
+   that `Service<dyn Greeting>` exists and carries the registered name, one also injecting
+   `Config<GreetingConfig>` and asserting the exclamation-mark count matches the config. Key points: test
+   functions receive dependencies through parameter types exactly like components;
+   `#[on(event = BinaryGuid(efi::EVENT_GROUP_READY_TO_BOOT))]` runs them after every component and driver has
+   dispatched, so the service is guaranteed to exist; assertions use `u_assert!`/`u_assert_eq!`, which return an
+   error string instead of panicking. Look for `hello_component::tests::greeting_service_exists ... ok` and
+   `greeting_matches_config ... ok` under `Patina on-system unit-test results`. Exercise: change
+   `exclamation_marks` to 5 in `apply.ps1` and rerun; both tests still pass. Then hard-code 3 in the test and see
+   what a failure looks like, and how `exit_on_patina_test_failure` makes QEMU exit non-zero.
 
 ### Checkpoints
 

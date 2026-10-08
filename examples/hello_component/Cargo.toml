@@ -11,4 +11,7 @@ path = "src/lib.rs"
 [dependencies]
 # Keep in sync with the patina version used by patina-dxe-core-qemu (see its Cargo.toml / Cargo.lock).
 patina = { version = "23" }
+# On-system tests (#[patina_test]). The tests are only collected when some crate in the final binary enables
+# patina_test's `test-runner` feature; patina-dxe-core-qemu does. Without it the attribute expands to a plain fn.
+patina_test = { version = "23" }
 log = { version = "^0.4", default-features = false }
