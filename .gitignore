@@ -1,0 +1,14 @@
+# Upstream sources are cloned by setup.ps1, not vendored here
+/patina-qemu/
+/patina-dxe-core-qemu/
+
+# Downloaded toolchains (portable LLVM) and build artifacts
+/tools/
+/logs/
+*.log
+
+# Editor / OS noise
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
