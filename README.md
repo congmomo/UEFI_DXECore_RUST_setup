@@ -71,7 +71,10 @@ Idempotent environment setup. Re-run it any time; it only fills in what is missi
 | Python packages | `pip install -r patina-qemu/pip-requirements.txt` (edk2-pytools) |
 | `stuart_setup` / `stuart_update` | git submodules and external dependencies: QEMU for Windows, NASM, iasl, EDK II BaseTools binaries, prebuilt Patina DXE Core, OS test images |
 
-Flags: `-NoInstall` (check only, never call winget), `-LlvmVersion`, `-PatinaQemuUrl`, `-DxeCoreQemuUrl`.
+Flags: `-NoInstall` (check only, never call winget), `-LlvmVersion`, `-PatinaQemuUrl`, `-DxeCoreQemuUrl`,
+`-DebugTools` (also install WinDbg via winget and the UEFI WinDbg extension from
+[microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools) into `%LOCALAPPDATA%\Dbg\EngineExtensions`;
+`-UefiExtVersion <tag>` pins the extension release, default is the latest).
 
 #### `build_q35.ps1`
 
@@ -116,10 +119,11 @@ second, hardware-level channel. Details and background are in the
 [learning guide, chapter 7](docs/learning-guide.en.md#7-debugging) and in upstream's
 [`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md).
 
-1. **One-time setup:** install [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/) (the
-   Store/`winget install Microsoft.WinDbg` version ships `ExdiGdbSrv.dll`), download the latest
-   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest) and extract it to
-   `%LOCALAPPDATA%\Dbg\EngineExtensions\`.
+1. **One-time setup:** `.\setup.ps1 -DebugTools` installs [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)
+   through winget (the Store build, which ships `ExdiGdbSrv.dll`) and extracts `UefiExt_x64.zip` from the latest
+   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest) (`uefiext.dll`,
+   `EfiSymComposition.dll`) into `%LOCALAPPDATA%\Dbg\EngineExtensions\`. Re-running updates the extension when a
+   newer release exists.
 2. **Build and start QEMU halted at the initial breakpoint:**
 
    ```powershell
@@ -295,7 +299,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 | Python 包 | `pip install -r patina-qemu/pip-requirements.txt`（edk2-pytools） |
 | `stuart_setup` / `stuart_update` | git 子模块和外部依赖：Windows 版 QEMU、NASM、iasl、EDK II BaseTools 二进制、预编译 Patina DXE Core、OS 测试镜像 |
 
-参数：`-NoInstall`（只检查，不调用 winget）、`-LlvmVersion`、`-PatinaQemuUrl`、`-DxeCoreQemuUrl`。
+参数：`-NoInstall`（只检查，不调用 winget）、`-LlvmVersion`、`-PatinaQemuUrl`、`-DxeCoreQemuUrl`、
+`-DebugTools`（额外通过 winget 安装 WinDbg，并把 [microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools)
+的 UEFI WinDbg 扩展装到 `%LOCALAPPDATA%\Dbg\EngineExtensions`；`-UefiExtVersion <tag>` 固定扩展版本，默认取最新 release）。
 
 #### `build_q35.ps1`
 
@@ -336,10 +342,10 @@ Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina �
 第二条硬件级通道。原理见[学习指导第 7 章](docs/learning-guide.zh.md#7-调试)，上游文档见
 [`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md)。
 
-1. **一次性准备**：安装 [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)（商店版 /
-   `winget install Microsoft.WinDbg`，自带 `ExdiGdbSrv.dll`），下载最新的
-   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest)，解压到
-   `%LOCALAPPDATA%\Dbg\EngineExtensions\`。
+1. **一次性准备**：`.\setup.ps1 -DebugTools` 通过 winget 安装 [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)
+   （商店版，自带 `ExdiGdbSrv.dll`），并把最新 [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest)
+   的 `UefiExt_x64.zip`（`uefiext.dll`、`EfiSymComposition.dll`）解压到 `%LOCALAPPDATA%\Dbg\EngineExtensions\`。
+   再次运行时如有新版本会自动更新扩展。
 2. **编译并让 QEMU 停在初始断点**：
 
    ```powershell
