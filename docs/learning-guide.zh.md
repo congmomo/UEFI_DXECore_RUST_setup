@@ -563,7 +563,7 @@ cd patina-dxe-core-qemu
 cargo make q35 --features enable_debugger
 ```
 
-QEMU 侧要把 COM1 暴露成 TCP：`stuart_build ... SERIAL_PORT=50001 --FlashOnly`（patina-qemu 的 `build_and_run_rust_binary.py` 默认就是 50001）。然后用 GDB 连 `target remote :50001`，或者按 `patina-qemu/docs/src/debugging/windbg_uefi.md` 用 WinDbg 加 EXDi 插件（来自 microsoft/uefi_debug_tools）。调试器还支持自定义 monitor 命令（`add_monitor_command`）和 `debugger_reload` feature（不重启 QEMU 就换一个新编的 DXE Core 镜像，见文档书 `dev/debugging/core_reload.md`）。
+QEMU 侧要把 COM1 暴露成 TCP：`stuart_build ... SERIAL_PORT=50001 --FlashOnly`（patina-qemu 的 `build_and_run_rust_binary.py` 默认就是 50001）。本仓库的脚本把这两步合成一条：`.\build_q35.ps1 -EnableDebugger -Run -SerialPort 50001 -GdbServer 5555`（`-GdbServer` 对应 7.3 节的 `GDB_SERVER`）。然后用 GDB 连 `target remote :50001`，或者按 `patina-qemu/docs/src/debugging/windbg_uefi.md` 用 WinDbg 加 EXDi 插件（来自 microsoft/uefi_debug_tools）。调试器还支持自定义 monitor 命令（`add_monitor_command`）和 `debugger_reload` feature（不重启 QEMU 就换一个新编的 DXE Core 镜像，见文档书 `dev/debugging/core_reload.md`）。
 
 ### 7.3 硬件级调试
 

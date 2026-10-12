@@ -689,8 +689,9 @@ cd patina-dxe-core-qemu
 cargo make q35 --features enable_debugger
 ```
 
-On the QEMU side expose COM1 as TCP: `stuart_build ... SERIAL_PORT=50001 --FlashOnly` (patina-qemu's
-`build_and_run_rust_binary.py` defaults to 50001). Then connect GDB with `target remote :50001`, or follow
+On the QEMU side expose COM1 as TCP: `stuart_build ... SERIAL_PORT=50001 --FlashOnly`. This repository's script does
+both steps in one go: `.\build_q35.ps1 -EnableDebugger -Run -SerialPort 50001 -GdbServer 5555` (`-GdbServer` is the
+`GDB_SERVER` option from section 7.3; patina-qemu's own `build_and_run_rust_binary.py` defaults to 50001). Then connect GDB with `target remote :50001`, or follow
 `patina-qemu/docs/src/debugging/windbg_uefi.md` to use WinDbg through the EXDi plug-in from
 microsoft/uefi_debug_tools. The debugger also supports custom monitor commands (`add_monitor_command`) and the
 `debugger_reload` feature (swap in a freshly built DXE Core image without restarting QEMU; see the book,

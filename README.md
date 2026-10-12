@@ -86,6 +86,9 @@ Build and/or run the Q35 (x64) platform.
 | `-RunOnly` | skip the build, launch QEMU with the last build |
 | `-Headless` | no display, firmware log to the console, UEFI Shell runs `reset -s` so QEMU exits by itself (CI style) |
 | `-OsImage <path>` | boot a VHDX/QCOW2 OS image instead of stopping at the UEFI Shell (`PATH_TO_OS`); memory is raised to 8 GB |
+| `-EnableDebugger` | build the Rust core with the `enable_debugger` feature (implies `-LocalCore`): the Patina software debugger halts at an initial breakpoint and waits for WinDbg/GDB on COM1 |
+| `-SerialPort <n>` | expose COM1 on TCP port `n` (`SERIAL_PORT`); with `-EnableDebugger` this is where WinDbg (EXDi) or GDB connect |
+| `-GdbServer <n>` | enable QEMU's own gdbstub on TCP port `n` (`GDB_SERVER`), hardware-level debugging independent of the firmware |
 | `-DryRun` | print environment and the `stuart_build` command line, run nothing |
 
 Outputs: `patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEMUQ35_VARS.fd`,
@@ -102,6 +105,55 @@ Outputs: `patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEM
   (`patina-qemu/docs/src/debugging/`).
 * **ARM Virt (AArch64):** builds on a Windows host too, but Hafnium/TF-A are consumed as prebuilt
   binaries there (they only compile on Linux). Not wrapped by these scripts.
+
+### Debugging
+
+Source-level debugging of the Rust DXE Core uses three pieces: the **Patina software debugger** compiled into the
+core (`patina_debugger`, a GDB remote protocol stub on COM1), the **PDB symbols** that `cargo make q35` writes next
+to the `.efi`, and **WinDbg** talking GDB remote protocol through its EXDi transport plus the UEFI extension from
+[microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools). QEMU's own gdbstub is available as a
+second, hardware-level channel. Details and background are in the
+[learning guide, chapter 7](docs/learning-guide.en.md#7-debugging) and in upstream's
+[`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md).
+
+1. **One-time setup:** install [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/) (the
+   Store/`winget install Microsoft.WinDbg` version ships `ExdiGdbSrv.dll`), download the latest
+   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest) and extract it to
+   `%LOCALAPPDATA%\Dbg\EngineExtensions\`.
+2. **Build and start QEMU halted at the initial breakpoint:**
+
+   ```powershell
+   .\build_q35.ps1 -EnableDebugger -Run -SerialPort 50001 -GdbServer 5555
+   ```
+
+   `-EnableDebugger` builds the local core with the `enable_debugger` feature (DEBUG profile, PDB kept),
+   `-SerialPort` puts COM1 on TCP 50001, `-GdbServer` opens QEMU's gdbstub on 5555 (optional). Add `-Headless` to
+   keep the firmware log in the console. The boot stops after `*** Initial debug breakpoint! ***`.
+3. **Attach WinDbg:** Start debugging → Attach to kernel → EXDI tab: target type *UEFI*, architecture *X64*,
+   "Gdb server and port" `localhost:50001`, keep *Break on connection* checked (screenshots in
+   `patina-qemu/docs/src/debugging/images/`). Then in the command window:
+
+   ```text
+   .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
+   .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
+   !uefiext.init
+   ```
+
+   `!uefiext.init` reads the EFI debug image info table to enumerate loaded images and load their PDBs. The PDB
+   records absolute source paths, so `.srcpath` is only needed when debugging on another machine. The `.efi`
+   stores just the PDB file name (`/PDBALTPATH`), which is why the symbol path must be set.
+4. **Work as usual:** `bp qemu_q35_dxe_core!<function>`, `g`, `k`, `dv`, data breakpoints. Patina-specific
+   commands go through `!monitor <cmd>` (`!monitor help`, `!monitor mod` to list modules or break on a module
+   load, `!monitor ?` for debugger state). A `panic!` calls `patina_debugger::breakpoint()`, so panics stop in the
+   debugger instead of exiting QEMU. C drivers resolve through the CLANGPDB PDBs added above.
+5. **Hardware-level fallback:** a second WinDbg instance (EXDi, port 5555) or `gdb -ex "target remote :5555"`
+   talks to QEMU itself and still works when the firmware is wedged, but sees no Patina modules or symbols.
+
+Notes: RELEASE builds have `debug = false` and cannot be source-debugged. GDB and LLDB can connect to 50001 and
+step, but they do not read PE/PDB symbols, so function names stay unresolved. QEMU's serial socket serves one client
+per run; after disconnecting, relaunch with `.\build_q35.ps1 -RunOnly -Run -SerialPort 50001 -GdbServer 5555`.
+The flow above was verified on 2026-10-11: the core halts at the initial breakpoint, 50001 answers with the GDB
+stop packet `$T05thread:01;#07`, 5555 with QEMU's `$T05core:01;#38`.
 
 ### Troubleshooting (both already handled by the scripts)
 
@@ -258,6 +310,9 @@ Set-ExecutionPolicy -Scope Process Bypass
 | `-RunOnly` | 跳过编译，用上次产物启动 QEMU |
 | `-Headless` | 无显示，固件日志打到控制台，UEFI Shell 自动执行 `reset -s` 让 QEMU 自行退出（CI 方式） |
 | `-OsImage <路径>` | 启动 VHDX/QCOW2 操作系统镜像而不是停在 Shell（`PATH_TO_OS`），内存自动提到 8 GB |
+| `-EnableDebugger` | 用 `enable_debugger` feature 编译 Rust 核（隐含 `-LocalCore`）：Patina 软件调试器会停在初始断点，在 COM1 上等 WinDbg/GDB 连接 |
+| `-SerialPort <n>` | 把 COM1 暴露在 TCP 端口 `n`（`SERIAL_PORT`）；配合 `-EnableDebugger`，WinDbg（EXDi）或 GDB 就连这个端口 |
+| `-GdbServer <n>` | 在 TCP 端口 `n` 打开 QEMU 自带的 gdbstub（`GDB_SERVER`），硬件级调试，不依赖固件 |
 | `-DryRun` | 只打印环境变量和 `stuart_build` 命令行，不执行 |
 
 产物：`patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\FV\QEMUQ35_CODE.fd` / `QEMUQ35_VARS.fd`，
@@ -272,6 +327,51 @@ Set-ExecutionPolicy -Scope Process Bypass
   Windows 来宾两套 WinDbg 调试指南（`patina-qemu/docs/src/debugging/`）。
 * **ARM Virt（AArch64）**：也能在 Windows 主机上编译，但 Hafnium/TF-A 只能用预编译二进制（它们只在
   Linux 上编译）。本脚本未封装。
+
+### 调试
+
+Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina 软件调试器**（`patina_debugger`，在 COM1 上跑 GDB
+远程协议）、`cargo make q35` 生成在 `.efi` 旁边的 **PDB 符号**、以及通过 EXDi 传输层说 GDB 协议的 **WinDbg** 加
+[microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools) 的 UEFI 扩展。QEMU 自带的 gdbstub 是
+第二条硬件级通道。原理见[学习指导第 7 章](docs/learning-guide.zh.md#7-调试)，上游文档见
+[`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md)。
+
+1. **一次性准备**：安装 [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)（商店版 /
+   `winget install Microsoft.WinDbg`，自带 `ExdiGdbSrv.dll`），下载最新的
+   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest)，解压到
+   `%LOCALAPPDATA%\Dbg\EngineExtensions\`。
+2. **编译并让 QEMU 停在初始断点**：
+
+   ```powershell
+   .\build_q35.ps1 -EnableDebugger -Run -SerialPort 50001 -GdbServer 5555
+   ```
+
+   `-EnableDebugger` 用 `enable_debugger` feature 编本地核（DEBUG profile，保留 PDB），`-SerialPort` 把 COM1
+   放到 TCP 50001，`-GdbServer` 打开 QEMU gdbstub 的 5555（可选）。加 `-Headless` 可以把固件日志留在控制台。
+   启动会停在 `*** Initial debug breakpoint! ***`。
+3. **连接 WinDbg**：Start debugging → Attach to kernel → EXDI 页：Target type 选 *UEFI*，架构 *X64*，
+   "Gdb server and port" 填 `localhost:50001`，保持勾选 *Break on connection*（截图在
+   `patina-qemu/docs/src/debugging/images/`）。然后在命令窗口：
+
+   ```text
+   .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
+   .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
+   !uefiext.init
+   ```
+
+   `!uefiext.init` 读 EFI debug image info table 枚举已加载镜像并装载各自的 PDB。PDB 里记的是源码绝对路径，
+   同一台机器上不需要 `.srcpath`。`.efi` 只存 PDB 文件名（`/PDBALTPATH`），所以符号路径必须设。
+4. **正常调试**：`bp qemu_q35_dxe_core!<函数>`、`g`、`k`、`dv`、数据断点都可用。Patina 特有的命令走
+   `!monitor <cmd>`（`!monitor help`，`!monitor mod` 列模块或在某模块加载时停，`!monitor ?` 看调试器状态）。
+   `panic!` 会调用 `patina_debugger::breakpoint()`，所以 panic 会停在调试器里而不是让 QEMU 退出。C 驱动通过上面
+   加的 CLANGPDB PDB 解析。
+5. **硬件级兜底**：再开一个 WinDbg（EXDi，端口 5555）或 `gdb -ex "target remote :5555"` 直接连 QEMU，固件
+   自己挂死时也能用，但看不到 Patina 的模块和符号。
+
+注意：RELEASE 构建 `debug = false`，不能源码级调试。GDB 和 LLDB 能连 50001 并单步，但它们不读 PE/PDB 符号，函数名
+解析不出来。QEMU 的串口 socket 一次运行只服务一个客户端，断开后用
+`.\build_q35.ps1 -RunOnly -Run -SerialPort 50001 -GdbServer 5555` 重新启动。以上流程于 2026-10-11 验证：核停在
+初始断点，50001 返回 GDB 停机包 `$T05thread:01;#07`，5555 返回 QEMU 的 `$T05core:01;#38`。
 
 ### 常见问题（脚本均已处理）
 
