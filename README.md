@@ -138,26 +138,47 @@ second, hardware-level channel. Details and background are in the
    `-EnableDebugger` builds the local core with the `enable_debugger` feature (DEBUG profile, PDB kept),
    `-SerialPort` puts COM1 on TCP 50001, `-GdbServer` opens QEMU's gdbstub on 5555 (optional). Add `-Headless` to
    keep the firmware log in the console. The boot stops after `*** Initial debug breakpoint! ***`.
-3. **Attach WinDbg:** Start debugging → Attach to kernel → EXDI tab: target type *UEFI*, architecture *X64*,
-   "Gdb server and port" `localhost:50001`, keep *Break on connection* checked (screenshots in
-   `patina-qemu/docs/src/debugging/images/`). Then in the command window:
+3. **Attach WinDbg:** start WinDbg from the Start menu, then Start debugging → Attach to kernel → EXDI tab:
+   target type *UEFI*, architecture *X64*, "Gdb server and port" `localhost:50001`, keep *Break on connection*
+   checked (screenshots in `patina-qemu/docs/src/debugging/images/`). A message box *the
+   EXDI_SYSTEM_REGISTERS_MAP_XML_FILE environment variable is not defined* may appear; it only disables
+   `rdmsr`/`wrmsr`, click OK (or set that variable to `<WinDbg package>\amd64\systemregisters.xml` before starting
+   WinDbg). The command window ends with `7b0a627c cc int 3`, the initial breakpoint. Then:
 
    ```text
    .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
    .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
    .load D:\path\to\tools\uefiext\uefiext.dll
    !uefiext.init
+   k
+   lsa @rip
    ```
+
+   `k` should show `patina_debugger::...::initialize` with `debugger.rs @ 402`, then `patina_dxe_core::Core::entry_point`
+   (`lib.rs @ 381`) and `qemu_q35_dxe_core::_start` (`q35_dxe_core.rs @ 137`); `lsa @rip` lists the source around
+   `SystemArch::breakpoint();` and WinDbg opens the file in a source window.
 
    `!uefiext.init` reads the EFI debug image info table to enumerate loaded images and load their PDBs. If it
    finds nothing, register the core by hand with the base address printed in the boot log
    (`Loading PEIM at 0x0007B08A000 ... qemu_q35_dxe_core.efi`): `.reload /f qemu_q35_dxe_core.efi=0x7b08a000,0x131000`.
    The PDB records absolute source paths, so `.srcpath` is only needed when debugging on another machine. The
    `.efi` stores just the PDB file name (`/PDBALTPATH`), which is why the symbol path must be set.
-4. **Work as usual:** `bp qemu_q35_dxe_core!<function>`, `g`, `k`, `dv`, data breakpoints. Patina-specific
-   commands go through `!monitor <cmd>` (`!monitor help`, `!monitor mod` to list modules or break on a module
-   load, `!monitor ?` for debugger state). A `panic!` calls `patina_debugger::breakpoint()`, so panics stop in the
-   debugger instead of exiting QEMU. C drivers resolve through the CLANGPDB PDBs added above.
+4. **Work as usual:** pick a function that runs later, break there, continue, step through the Rust source:
+
+   ```text
+   x qemu_q35_dxe_core!patina_dxe_core::pi_dispatcher*     ; list candidates
+   bp qemu_q35_dxe_core!<one of them>
+   g
+   k
+   lsa @rip
+   p                                                       ; step over, source level
+   dv                                                      ; locals
+   ```
+
+   Data breakpoints (`ba`) work too. Patina-specific commands go through `!monitor <cmd>` (`!monitor help`,
+   `!monitor mod` to list modules or break on a module load, `!monitor ?` for debugger state). A `panic!` calls
+   `patina_debugger::breakpoint()`, so panics stop in the debugger instead of exiting QEMU. C drivers resolve
+   through the CLANGPDB PDBs added above.
 5. **Hardware-level fallback:** a second WinDbg instance (EXDi, port 5555) or `gdb -ex "target remote :5555"`
    talks to QEMU itself and still works when the firmware is wedged, but sees no Patina modules or symbols.
 
@@ -371,25 +392,44 @@ Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina �
    `-EnableDebugger` 用 `enable_debugger` feature 编本地核（DEBUG profile，保留 PDB），`-SerialPort` 把 COM1
    放到 TCP 50001，`-GdbServer` 打开 QEMU gdbstub 的 5555（可选）。加 `-Headless` 可以把固件日志留在控制台。
    启动会停在 `*** Initial debug breakpoint! ***`。
-3. **连接 WinDbg**：Start debugging → Attach to kernel → EXDI 页：Target type 选 *UEFI*，架构 *X64*，
-   "Gdb server and port" 填 `localhost:50001`，保持勾选 *Break on connection*（截图在
-   `patina-qemu/docs/src/debugging/images/`）。然后在命令窗口：
+3. **连接 WinDbg**：从开始菜单启动 WinDbg，Start debugging → Attach to kernel → EXDI 页：Target type 选 *UEFI*，
+   架构 *X64*，"Gdb server and port" 填 `localhost:50001`，保持勾选 *Break on connection*（截图在
+   `patina-qemu/docs/src/debugging/images/`）。可能弹出 *the EXDI_SYSTEM_REGISTERS_MAP_XML_FILE environment variable
+   is not defined*，它只影响 `rdmsr`/`wrmsr`，点 OK 即可（或在启动 WinDbg 前把该变量设为
+   `<WinDbg 包目录>\amd64\systemregisters.xml`）。命令窗口最后一行是 `7b0a627c cc int 3`，即初始断点。然后：
 
    ```text
    .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
    .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
    .load D:\path\to\tools\uefiext\uefiext.dll
    !uefiext.init
+   k
+   lsa @rip
    ```
+
+   `k` 应显示 `patina_debugger::...::initialize`（`debugger.rs @ 402`）、`patina_dxe_core::Core::entry_point`
+   （`lib.rs @ 381`）、`qemu_q35_dxe_core::_start`（`q35_dxe_core.rs @ 137`）三层；`lsa @rip` 列出
+   `SystemArch::breakpoint();` 周围的源码，WinDbg 会同时打开源码窗口。
 
    `!uefiext.init` 读 EFI debug image info table 枚举已加载镜像并装载各自的 PDB。如果它什么都没找到，用启动日志里的
    基地址手动登记核镜像（`Loading PEIM at 0x0007B08A000 ... qemu_q35_dxe_core.efi`）：
    `.reload /f qemu_q35_dxe_core.efi=0x7b08a000,0x131000`。PDB 里记的是源码绝对路径，同一台机器上不需要 `.srcpath`。
    `.efi` 只存 PDB 文件名（`/PDBALTPATH`），所以符号路径必须设。
-4. **正常调试**：`bp qemu_q35_dxe_core!<函数>`、`g`、`k`、`dv`、数据断点都可用。Patina 特有的命令走
-   `!monitor <cmd>`（`!monitor help`，`!monitor mod` 列模块或在某模块加载时停，`!monitor ?` 看调试器状态）。
-   `panic!` 会调用 `patina_debugger::breakpoint()`，所以 panic 会停在调试器里而不是让 QEMU 退出。C 驱动通过上面
-   加的 CLANGPDB PDB 解析。
+4. **正常调试**：找一个稍后才会执行的函数下断点，放行，再按源码单步：
+
+   ```text
+   x qemu_q35_dxe_core!patina_dxe_core::pi_dispatcher*     ; 列出候选函数
+   bp qemu_q35_dxe_core!<从中挑一个>
+   g
+   k
+   lsa @rip
+   p                                                       ; 源码级单步
+   dv                                                      ; 局部变量
+   ```
+
+   数据断点（`ba`）也可用。Patina 特有的命令走 `!monitor <cmd>`（`!monitor help`，`!monitor mod` 列模块或在某模块
+   加载时停，`!monitor ?` 看调试器状态）。`panic!` 会调用 `patina_debugger::breakpoint()`，所以 panic 会停在调试器里
+   而不是让 QEMU 退出。C 驱动通过上面加的 CLANGPDB PDB 解析。
 5. **硬件级兜底**：再开一个 WinDbg（EXDi，端口 5555）或 `gdb -ex "target remote :5555"` 直接连 QEMU，固件
    自己挂死时也能用，但看不到 Patina 的模块和符号。
 
