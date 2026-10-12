@@ -72,8 +72,8 @@ Idempotent environment setup. Re-run it any time; it only fills in what is missi
 | `stuart_setup` / `stuart_update` | git submodules and external dependencies: QEMU for Windows, NASM, iasl, EDK II BaseTools binaries, prebuilt Patina DXE Core, OS test images |
 
 Flags: `-NoInstall` (check only, never call winget), `-LlvmVersion`, `-PatinaQemuUrl`, `-DxeCoreQemuUrl`,
-`-DebugTools` (also install WinDbg via winget and the UEFI WinDbg extension from
-[microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools) into `%LOCALAPPDATA%\Dbg\EngineExtensions`;
+`-DebugTools` (also install WinDbg via winget, register its EXDi COM server, and put the UEFI WinDbg extension from
+[microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools) into `tools\uefiext`;
 `-UefiExtVersion <tag>` pins the extension release, default is the latest).
 
 #### `build_q35.ps1`
@@ -120,10 +120,15 @@ second, hardware-level channel. Details and background are in the
 [`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md).
 
 1. **One-time setup:** `.\setup.ps1 -DebugTools` installs [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)
-   through winget (the Store build, which ships `ExdiGdbSrv.dll`) and extracts `UefiExt_x64.zip` from the latest
+   through winget (the Store build, which ships `ExdiGdbSrv.dll`), registers that DLL as a COM server (one UAC
+   prompt; without it every EXDi connection fails with *Debugger must be run from an elevated command prompt to
+   register the EXDI COM server*; `regsvr32` runs on a copy in `tools\exdi` because nothing outside the package can
+   load DLLs from `WindowsApps`, then `InprocServer32` is pointed back at the package DLL, which WinDbg insists on)
+   and extracts `UefiExt_x64.zip` from the latest
    [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest) (`uefiext.dll`,
-   `EfiSymComposition.dll`) into `%LOCALAPPDATA%\Dbg\EngineExtensions\`. Re-running updates the extension when a
-   newer release exists.
+   `EfiSymComposition.dll`) into `tools\uefiext\`. Upstream suggests `%LOCALAPPDATA%\Dbg\EngineExtensions\`, but
+   WinDbg 1.2610 cannot load the DLL from that folder (Win32 error 126) while it loads fine from anywhere else, so
+   the extension is loaded by explicit path instead. Re-running updates it when a newer release exists.
 2. **Build and start QEMU halted at the initial breakpoint:**
 
    ```powershell
@@ -140,12 +145,15 @@ second, hardware-level channel. Details and background are in the
    ```text
    .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
    .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
+   .load D:\path\to\tools\uefiext\uefiext.dll
    !uefiext.init
    ```
 
-   `!uefiext.init` reads the EFI debug image info table to enumerate loaded images and load their PDBs. The PDB
-   records absolute source paths, so `.srcpath` is only needed when debugging on another machine. The `.efi`
-   stores just the PDB file name (`/PDBALTPATH`), which is why the symbol path must be set.
+   `!uefiext.init` reads the EFI debug image info table to enumerate loaded images and load their PDBs. If it
+   finds nothing, register the core by hand with the base address printed in the boot log
+   (`Loading PEIM at 0x0007B08A000 ... qemu_q35_dxe_core.efi`): `.reload /f qemu_q35_dxe_core.efi=0x7b08a000,0x131000`.
+   The PDB records absolute source paths, so `.srcpath` is only needed when debugging on another machine. The
+   `.efi` stores just the PDB file name (`/PDBALTPATH`), which is why the symbol path must be set.
 4. **Work as usual:** `bp qemu_q35_dxe_core!<function>`, `g`, `k`, `dv`, data breakpoints. Patina-specific
    commands go through `!monitor <cmd>` (`!monitor help`, `!monitor mod` to list modules or break on a module
    load, `!monitor ?` for debugger state). A `panic!` calls `patina_debugger::breakpoint()`, so panics stop in the
@@ -156,8 +164,12 @@ second, hardware-level channel. Details and background are in the
 Notes: RELEASE builds have `debug = false` and cannot be source-debugged. GDB and LLDB can connect to 50001 and
 step, but they do not read PE/PDB symbols, so function names stay unresolved. QEMU's serial socket serves one client
 per run; after disconnecting, relaunch with `.\build_q35.ps1 -RunOnly -Run -SerialPort 50001 -GdbServer 5555`.
-The flow above was verified on 2026-10-11: the core halts at the initial breakpoint, 50001 answers with the GDB
-stop packet `$T05thread:01;#07`, 5555 with QEMU's `$T05core:01;#38`.
+Use the WinDbg app (WinDbgX); the console `kd.exe -kx exdi:...,InProc=ExdiGdbSrv.dll` route coincided with two
+host freezes on the test machine and is not recommended. Verified on 2026-10-12: WinDbgX attaches through EXDI,
+the core halts at the initial breakpoint (`7b0a627c cc int 3`), `k` shows the Rust frames with source lines
+(`patina_debugger\...\debugger.rs @ 402`, `patina_dxe_core\...\lib.rs @ 381`, `bin\q35_dxe_core.rs @ 137`) and
+`lsa @rip` lists the Rust source around `SystemArch::breakpoint()`. Port 50001 answers the GDB stop packet
+`$T05thread:01;#07`, 5555 QEMU's `$T05core:01;#38`.
 
 ### Troubleshooting (both already handled by the scripts)
 
@@ -300,8 +312,8 @@ Set-ExecutionPolicy -Scope Process Bypass
 | `stuart_setup` / `stuart_update` | git 子模块和外部依赖：Windows 版 QEMU、NASM、iasl、EDK II BaseTools 二进制、预编译 Patina DXE Core、OS 测试镜像 |
 
 参数：`-NoInstall`（只检查，不调用 winget）、`-LlvmVersion`、`-PatinaQemuUrl`、`-DxeCoreQemuUrl`、
-`-DebugTools`（额外通过 winget 安装 WinDbg，并把 [microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools)
-的 UEFI WinDbg 扩展装到 `%LOCALAPPDATA%\Dbg\EngineExtensions`；`-UefiExtVersion <tag>` 固定扩展版本，默认取最新 release）。
+`-DebugTools`（额外通过 winget 安装 WinDbg、注册它的 EXDi COM 服务器，并把 [microsoft/uefi_debug_tools](https://github.com/microsoft/uefi_debug_tools)
+的 UEFI WinDbg 扩展放到 `tools\uefiext`；`-UefiExtVersion <tag>` 固定扩展版本，默认取最新 release）。
 
 #### `build_q35.ps1`
 
@@ -343,9 +355,13 @@ Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina �
 [`windbg_uefi.md`](patina-qemu/docs/src/debugging/windbg_uefi.md)。
 
 1. **一次性准备**：`.\setup.ps1 -DebugTools` 通过 winget 安装 [WinDbg](https://learn.microsoft.com/windows-hardware/drivers/debugger/)
-   （商店版，自带 `ExdiGdbSrv.dll`），并把最新 [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest)
-   的 `UefiExt_x64.zip`（`uefiext.dll`、`EfiSymComposition.dll`）解压到 `%LOCALAPPDATA%\Dbg\EngineExtensions\`。
-   再次运行时如有新版本会自动更新扩展。
+   （商店版，自带 `ExdiGdbSrv.dll`），把这个 DLL 注册为 COM 服务器（弹一次 UAC；不注册的话每次 EXDi 连接都会报
+   *Debugger must be run from an elevated command prompt to register the EXDI COM server*；`regsvr32` 在 `tools\exdi`
+   的副本上执行，因为包外进程无法加载 `WindowsApps` 里的 DLL，之后再把 `InprocServer32` 指回包内的 DLL，WinDbg 只认这个路径），
+   再把最新
+   [uefi_debug_tools release](https://github.com/microsoft/uefi_debug_tools/releases/latest) 的 `UefiExt_x64.zip`
+   （`uefiext.dll`、`EfiSymComposition.dll`）解压到 `tools\uefiext\`。上游建议放 `%LOCALAPPDATA%\Dbg\EngineExtensions\`，
+   但 WinDbg 1.2610 从那个目录加载会报 Win32 错误 126，放在其他任何目录都正常，所以改为按路径显式加载。再次运行时如有新版本会自动更新扩展。
 2. **编译并让 QEMU 停在初始断点**：
 
    ```powershell
@@ -362,11 +378,14 @@ Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina �
    ```text
    .sympath+ D:\path\to\patina-dxe-core-qemu\target\x86_64-unknown-uefi\debug
    .sympath+ D:\path\to\patina-qemu\Build\QemuQ35Pkg\DEBUG_CLANGPDB\PDB
+   .load D:\path\to\tools\uefiext\uefiext.dll
    !uefiext.init
    ```
 
-   `!uefiext.init` 读 EFI debug image info table 枚举已加载镜像并装载各自的 PDB。PDB 里记的是源码绝对路径，
-   同一台机器上不需要 `.srcpath`。`.efi` 只存 PDB 文件名（`/PDBALTPATH`），所以符号路径必须设。
+   `!uefiext.init` 读 EFI debug image info table 枚举已加载镜像并装载各自的 PDB。如果它什么都没找到，用启动日志里的
+   基地址手动登记核镜像（`Loading PEIM at 0x0007B08A000 ... qemu_q35_dxe_core.efi`）：
+   `.reload /f qemu_q35_dxe_core.efi=0x7b08a000,0x131000`。PDB 里记的是源码绝对路径，同一台机器上不需要 `.srcpath`。
+   `.efi` 只存 PDB 文件名（`/PDBALTPATH`），所以符号路径必须设。
 4. **正常调试**：`bp qemu_q35_dxe_core!<函数>`、`g`、`k`、`dv`、数据断点都可用。Patina 特有的命令走
    `!monitor <cmd>`（`!monitor help`，`!monitor mod` 列模块或在某模块加载时停，`!monitor ?` 看调试器状态）。
    `panic!` 会调用 `patina_debugger::breakpoint()`，所以 panic 会停在调试器里而不是让 QEMU 退出。C 驱动通过上面
@@ -376,8 +395,12 @@ Rust DXE Core 的源码级调试由三部分组成：编进核里的 **Patina �
 
 注意：RELEASE 构建 `debug = false`，不能源码级调试。GDB 和 LLDB 能连 50001 并单步，但它们不读 PE/PDB 符号，函数名
 解析不出来。QEMU 的串口 socket 一次运行只服务一个客户端，断开后用
-`.\build_q35.ps1 -RunOnly -Run -SerialPort 50001 -GdbServer 5555` 重新启动。以上流程于 2026-10-11 验证：核停在
-初始断点，50001 返回 GDB 停机包 `$T05thread:01;#07`，5555 返回 QEMU 的 `$T05core:01;#38`。
+`.\build_q35.ps1 -RunOnly -Run -SerialPort 50001 -GdbServer 5555` 重新启动。请用 WinDbg 应用（WinDbgX）；命令行
+`kd.exe -kx exdi:...,InProc=ExdiGdbSrv.dll` 这条路在测试机上两次伴随主机死机，不建议使用。以上流程于 2026-10-12 验证：
+WinDbgX 通过 EXDI 连上，核停在初始断点（`7b0a627c cc int 3`），`k` 显示带源码行号的 Rust 栈
+（`patina_debugger\...\debugger.rs @ 402`、`patina_dxe_core\...\lib.rs @ 381`、`bin\q35_dxe_core.rs @ 137`），
+`lsa @rip` 列出 `SystemArch::breakpoint()` 周围的 Rust 源码。50001 返回 GDB 停机包 `$T05thread:01;#07`，5555 返回
+QEMU 的 `$T05core:01;#38`。
 
 ### 常见问题（脚本均已处理）
 

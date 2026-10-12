@@ -15,8 +15,9 @@
       5. Installs edk2-pytools (pip-requirements.txt of patina-qemu).
       6. Runs stuart_setup / stuart_update for QemuQ35Pkg: git submodules, QEMU for Windows, NASM, iasl,
          EDK II BaseTools binaries, prebuilt Patina DXE Core and other external dependencies.
-      7. With -DebugTools: installs WinDbg (winget) and the UEFI WinDbg extension (uefiext) from
-         microsoft/uefi_debug_tools, which together give source-level debugging of the Rust DXE Core
+      7. With -DebugTools: installs WinDbg (winget), registers its EXDi GDB server COM class (ExdiGdbSrv.dll,
+         one UAC prompt per WinDbg version) and installs the UEFI WinDbg extension (uefiext) from
+         microsoft/uefi_debug_tools. Together these give source-level debugging of the Rust DXE Core
          (see README.md, "Debugging").
 
     After it finishes, run .\build_q35.ps1 (see README.md).
@@ -30,8 +31,11 @@
 .PARAMETER NoInstall
     Only check prerequisites and report; never call winget.
 .PARAMETER DebugTools
-    Also install the debugging software: WinDbg (winget id Microsoft.WinDbg, ships the EXDi GDB transport) and the
-    UEFI WinDbg extension (UefiExt_x64.zip from microsoft/uefi_debug_tools) into %LOCALAPPDATA%\Dbg\EngineExtensions.
+    Also install the debugging software: WinDbg (winget id Microsoft.WinDbg, ships the EXDi GDB transport), the
+    COM registration of its ExdiGdbSrv.dll (one UAC prompt; without it every EXDi connection fails with
+    "Debugger must be run from an elevated command prompt to register the EXDI COM server") and the UEFI WinDbg
+    extension (UefiExt_x64.zip from microsoft/uefi_debug_tools) into .\tools\uefiext (load it with
+    .load <repo>\tools\uefiext\uefiext.dll).
 .PARAMETER UefiExtVersion
     Release tag of microsoft/uefi_debug_tools to install (for example v0.8.1). Default: the latest release on GitHub.
 
@@ -261,14 +265,47 @@ if ($DebugTools) {
     }
     if ($windbg) {
         Ok "WinDbg $($windbg.Version) at $($windbg.InstallLocation)"
-        $exdi = Join-Path $windbg.InstallLocation "amd64\ExdiGdbSrv.dll"
-        if (Test-Path $exdi) { Ok "ExdiGdbSrv.dll present" }
-        else { Warn "ExdiGdbSrv.dll not found under $($windbg.InstallLocation); EXDi debugging needs it" }
+        $exdiSrc = Join-Path $windbg.InstallLocation "amd64"
+        if (-not (Test-Path (Join-Path $exdiSrc "ExdiGdbSrv.dll"))) { Fail "ExdiGdbSrv.dll not found under $exdiSrc; EXDi debugging needs it" }
+        # dbgeng creates the EXDi GDB server through COM (CLSID 29f9906e-...), so ExdiGdbSrv.dll must be registered
+        # under HKLM (a per-user HKCU entry gives "Class not registered"), which needs elevation. Two twists:
+        #  - regsvr32 cannot load the DLL in place: non-packaged processes get ERROR_ACCESS_DENIED loading DLLs
+        #    from the WindowsApps folder (regsvr32 exits with 3). So DllRegisterServer runs on a copy in
+        #    .\tools\exdi, which creates the CLSID/AppID/TypeLib keys.
+        #  - WinDbgX only accepts the registration when InprocServer32 points at the DLL inside its own package
+        #    (otherwise it tries to re-register and fails without elevation), and its EngHost.exe can load from
+        #    there. So InprocServer32 is then re-pointed at the package path. Each WinDbg update changes that
+        #    path; re-running this script fixes it up (one UAC prompt).
+        $exdiDir = Join-Path $toolsDir "exdi"
+        New-Item -ItemType Directory -Force $exdiDir | Out-Null
+        foreach ($f in @("ExdiGdbSrv.dll", "exdiConfigData.xml", "systemregisters.xml")) {
+            $srcFile = Join-Path $exdiSrc $f
+            if (Test-Path $srcFile) { Copy-Item $srcFile (Join-Path $exdiDir $f) -Force }
+        }
+        $exdiCopy = Join-Path $exdiDir "ExdiGdbSrv.dll"
+        $exdiPkg = Join-Path $exdiSrc "ExdiGdbSrv.dll"
+        $exdiClsid = "Registry::HKEY_CLASSES_ROOT\CLSID\{29f9906e-9dbe-4d4b-b0fb-6acf7fb6d014}\InprocServer32"
+        $registered = (Test-Path $exdiClsid) -and ((Get-ItemProperty $exdiClsid).'(default)' -eq $exdiPkg)
+        $manual = "regsvr32 /s `"$exdiCopy`" && reg add `"HKCR\CLSID\{29f9906e-9dbe-4d4b-b0fb-6acf7fb6d014}\InprocServer32`" /ve /d `"$exdiPkg`" /f"
+        if ($registered) {
+            Ok "ExdiGdbSrv.dll registered ($exdiPkg)"
+        } elseif ($NoInstall) {
+            Fail "ExdiGdbSrv.dll is not registered. From an elevated prompt run: $manual"
+        } else {
+            Warn "Registering ExdiGdbSrv.dll (regsvr32 + reg add, UAC prompt) ..."
+            $p = Start-Process cmd.exe -ArgumentList @("/c", $manual) -Verb RunAs -Wait -PassThru
+            if ($p.ExitCode -ne 0) { Fail "registration exited with code $($p.ExitCode). From an elevated prompt run: $manual" }
+            $now = if (Test-Path $exdiClsid) { (Get-ItemProperty $exdiClsid).'(default)' } else { "" }
+            if ($now -eq $exdiPkg) { Ok "ExdiGdbSrv.dll registered ($exdiPkg)" } else { Fail "registration did not take (InprocServer32 = '$now'). From an elevated prompt run: $manual" }
+        }
     } else {
         Warn "WinDbg package not visible to this session; start WinDbg once from the Start menu and re-run if needed."
     }
 
-    $extDir = Join-Path $env:LOCALAPPDATA "Dbg\EngineExtensions"
+    # Upstream says to drop uefiext.dll into %LOCALAPPDATA%\Dbg\EngineExtensions, but WinDbg 1.2610 (kd, cdb and
+    # WinDbgX alike) fails to load it from there with Win32 error 126, while the same file loads from any other
+    # directory. So it is kept in .\tools\uefiext and loaded with an explicit `.load <path>\uefiext.dll`.
+    $extDir = Join-Path $toolsDir "uefiext"
     Step "UEFI WinDbg extension (uefiext) -> $extDir"
     $tag = $UefiExtVersion
     if (-not $tag) {
@@ -288,7 +325,7 @@ if ($DebugTools) {
         Write-Host "    downloading $url ..."
         Invoke-Native "curl.exe" @("-L", "--fail", "--retry", "3", "-o", $zip, $url)
         if ($LASTEXITCODE -ne 0) { Fail "download failed (check the tag with -UefiExtVersion)" }
-        # The zip holds uefiext.dll and EfiSymComposition.dll at its root; WinDbg loads extensions from this directory.
+        # The zip holds uefiext.dll and EfiSymComposition.dll at its root.
         Expand-Archive -Path $zip -DestinationPath $extDir -Force
         if (-not (Test-Path (Join-Path $extDir "uefiext.dll"))) { Fail "uefiext.dll not found after extraction" }
         Set-Content -Path $marker -Value $tag -Encoding ascii
